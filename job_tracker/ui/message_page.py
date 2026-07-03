@@ -50,17 +50,17 @@ class MessagePage(ttk.Frame):
         }
         self._build()
 
-    def _options(self, include_record_values: bool = False) -> dict[str, list[str]]:
+    def _option_groups(self, include_record_values: bool = False) -> dict[str, list[str]]:
         try:
             return self.app.store.option_groups(include_record_values=include_record_values)
         except Exception:
             return {group: list(values) for group, values in OPTION_GROUPS.items()}
 
     def _option_values(self, group: str, include_record_values: bool = False) -> list[str]:
-        return self._options(include_record_values=include_record_values).get(group, list(OPTION_GROUPS[group]))
+        return self._option_groups(include_record_values=include_record_values).get(group, list(OPTION_GROUPS[group]))
 
     def refresh(self):
-        groups = self._options(include_record_values=True)
+        groups = self._option_groups(include_record_values=True)
         for group, widgets in self.option_widgets.items():
             for widget in widgets:
                 widget.configure(values=groups.get(group, list(OPTION_GROUPS[group])))
@@ -200,7 +200,7 @@ class MessagePage(ttk.Frame):
         if not text:
             messagebox.showinfo("请输入信息", "请先输入求职信息。")
             return
-        self._set_result(parse_message(text, options=self._options(include_record_values=True)))
+        self._set_result(parse_message(text, options=self._option_groups(include_record_values=True)))
 
     def _set_result(self, result: ParseResult):
         self.current_result = result

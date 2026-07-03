@@ -23,14 +23,14 @@ class RecordsPage(ttk.Frame):
         self.new_status_filter = None
         self._build()
 
-    def _options(self):
+    def _option_groups(self):
         try:
             return self.app.store.option_groups(include_record_values=True)
         except Exception:
             return {group: list(values) for group, values in OPTION_GROUPS.items()}
 
     def _refresh_option_values(self):
-        options = self._options()
+        options = self._option_groups()
         statuses = ["全部状态", *options["状态"]]
         directions = ["全部方向", *options["岗位方向"]]
         if self.status.get() not in statuses:
@@ -54,7 +54,7 @@ class RecordsPage(ttk.Frame):
         keyword_entry = ttk.Entry(toolbar, textvariable=self.keyword, width=28)
         keyword_entry.pack(side=LEFT)
         keyword_entry.bind("<Return>", lambda _event: self.refresh())
-        options = self._options()
+        options = self._option_groups()
         self.status_filter = ttk.Combobox(toolbar, textvariable=self.status, values=["全部状态", *options["状态"]], width=13, state="readonly")
         self.status_filter.pack(side=LEFT, padx=8)
         self.direction_filter = ttk.Combobox(toolbar, textvariable=self.direction, values=["全部方向", *options["岗位方向"]], width=14, state="readonly")

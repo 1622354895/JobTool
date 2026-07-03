@@ -2,6 +2,22 @@ from job_tracker.models import ApplicationDraft, Operation, ParseResult
 from job_tracker.ui.message_page import batch_duplicate_indexes, drafts_are_valid, merge_add_draft
 
 
+class DummyStore:
+    def option_groups(self, include_record_values=False):
+        return {
+            "状态": ["已投递"],
+            "岗位类型": ["提前批"],
+            "岗位方向": ["其他"],
+            "投递渠道": ["其他"],
+            "优先级": ["中"],
+            "记录类型": ["主动跟进"],
+        }
+
+
+class DummyApp:
+    store = DummyStore()
+
+
 def test_all_drafts_must_have_company_and_position():
     drafts = [
         ApplicationDraft(company="字节跳动", position="Agent开发实习生"),
@@ -39,3 +55,17 @@ def test_batch_duplicate_indexes_normalize_company_and_position():
     ]
 
     assert batch_duplicate_indexes(drafts) == {0, 1}
+
+
+def test_message_page_can_be_constructed_without_ttkbootstrap_frame_crash():
+    import ttkbootstrap as ttk
+
+    from job_tracker.ui.message_page import MessagePage
+
+    root = ttk.Window(themename="flatly")
+    root.withdraw()
+    try:
+        parent = ttk.Frame(root)
+        MessagePage(parent, DummyApp())
+    finally:
+        root.destroy()
