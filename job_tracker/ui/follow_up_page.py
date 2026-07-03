@@ -39,14 +39,15 @@ class FollowUpPage(ttk.Frame):
         ttk.Button(toolbar, text="刷新", command=self.refresh, bootstyle="secondary-outline").pack(side=LEFT, padx=8)
         ttk.Button(toolbar, text="查看详情", command=self.show_detail, bootstyle="info-outline").pack(side=LEFT)
         ttk.Button(toolbar, text="查看历史", command=self.show_history, bootstyle="primary-outline").pack(side=LEFT, padx=8)
-        columns = ("公司", "岗位", "状态", "跟进日期", "跟进状态")
-        self.tree = ttk.Treeview(self, columns=columns, show="headings", bootstyle="warning")
-        for column in columns:
-            self.tree.heading(column, text=column)
-            self.tree.column(column, width=220 if column == "岗位" else 150, anchor="w")
         table = ttk.Frame(self)
         table.pack(fill=BOTH, expand=True)
-        self.tree.pack(in_=table, side=LEFT, fill=BOTH, expand=True)
+
+        columns = ("公司", "岗位", "状态", "跟进日期", "跟进状态")
+        self.tree = ttk.Treeview(table, columns=columns, show="headings", height=14, bootstyle="warning")
+        for column in columns:
+            self.tree.heading(column, text=column)
+            self.tree.column(column, width=220 if column == "岗位" else 150, minwidth=90, anchor="w", stretch=True)
+        self.tree.pack(side=LEFT, fill=BOTH, expand=True)
         scrollbar = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview, bootstyle="round")
         scrollbar.pack(side="right", fill="y")
         self.tree.configure(yscrollcommand=scrollbar.set)
@@ -67,7 +68,7 @@ class FollowUpPage(ttk.Frame):
                 row["公司名称"], row["岗位名称"], row["当前状态"],
                 follow_date.strftime("%Y-%m-%d") if hasattr(follow_date, "strftime") else "", row["跟进状态"],
             ))
-        self.count_var.set(f"{len(rows)} 条待处理")
+        self.count_var.set(f"{len(rows)} 条{self.scope_var.get()}")
 
     def _selected_id(self):
         selected = self.tree.selection()
