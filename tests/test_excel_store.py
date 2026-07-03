@@ -1,6 +1,7 @@
 from datetime import date
 
 import pytest
+from openpyxl import load_workbook
 
 from job_tracker.excel_builder import build_workbook
 from job_tracker.excel_store import ExcelStore
@@ -125,3 +126,26 @@ def test_invalid_batch_does_not_create_backup(store):
         ])
 
     assert list(store.backup_dir.glob("tracker_*.xlsx")) == []
+
+
+def test_append_repairs_missing_workbook_tables(tmp_path):
+    path = tmp_path / "tracker.xlsx"
+    workbook = build_workbook()
+    del workbook["投递记录"].tables["tblApplications"]
+    del workbook["跟进记录"].tables["tblFollowUps"]
+    workbook.save(path)
+    workbook.close()
+
+    store = ExcelStore(path, backup_dir=tmp_path / "backups")
+
+    application_id = store.append_applications([
+        ApplicationDraft(company="字节跳动", position="Agent开发实习", applied_date=date(2026, 7, 3)),
+    ])[0]
+    store.append_follow_up(application_id, FollowUpDraft(content="HR沟通"))
+
+    repaired = load_workbook(path)
+    try:
+        assert "tblApplications" in repaired["投递记录"].tables
+        assert "tblFollowUps" in repaired["跟进记录"].tables
+    finally:
+        repaired.close()

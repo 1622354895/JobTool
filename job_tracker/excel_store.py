@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from .excel_builder import application_formulas, refresh_workbook_options
 from .models import ApplicationDraft, FollowUpDraft
@@ -71,6 +72,43 @@ class ExcelStore:
         return {str(cell.value): cell.column for cell in ws[1] if cell.value}
 
     @staticmethod
+    def _table_style() -> TableStyleInfo:
+        return TableStyleInfo(
+            name="TableStyleMedium2",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False,
+        )
+
+    @staticmethod
+    def _table_ref(ws, headers: list[str]) -> str:
+        end_column = ws.cell(1, len(headers)).column_letter
+        end_row = max(2, ws.max_row)
+        return f"A1:{end_column}{end_row}"
+
+    @classmethod
+    def _ensure_table(cls, ws, table_name: str, headers: list[str]):
+        table_ref = cls._table_ref(ws, headers)
+        if table_name in ws.tables:
+            table = ws.tables[table_name]
+            if table.ref != table_ref:
+                table.ref = table_ref
+                return table, True
+            return table, False
+        table = Table(displayName=table_name, ref=table_ref)
+        table.tableStyleInfo = cls._table_style()
+        ws.add_table(table)
+        return table, True
+
+    @classmethod
+    def _ensure_required_tables(cls, wb) -> bool:
+        changed = False
+        _, app_changed = cls._ensure_table(wb["投递记录"], "tblApplications", APPLICATION_COLUMNS)
+        _, follow_changed = cls._ensure_table(wb["跟进记录"], "tblFollowUps", FOLLOW_UP_COLUMNS)
+        return changed or app_changed or follow_changed
+
+    @staticmethod
     def _option_meta_version(ws) -> str:
         headers = ExcelStore._header_columns(ws)
         column = headers.get(OPTION_META_HEADER)
@@ -115,13 +153,15 @@ class ExcelStore:
         wb = self._load()
         version = self._option_meta_version(wb["选项配置"])
         groups = self._read_option_groups(wb)
-        if version == OPTION_CONFIG_VERSION:
+        tables_changed = self._ensure_required_tables(wb)
+        if version == OPTION_CONFIG_VERSION and not tables_changed:
             wb.close()
             return
         self._backup()
-        groups = merge_with_default_options(groups)
-        dashboard_groups = self._merge_record_option_values(wb, groups)
-        refresh_workbook_options(wb, groups, dashboard_groups)
+        if version != OPTION_CONFIG_VERSION:
+            groups = merge_with_default_options(groups)
+            dashboard_groups = self._merge_record_option_values(wb, groups)
+            refresh_workbook_options(wb, groups, dashboard_groups)
         self._atomic_save(wb)
 
     def option_groups(self, include_record_values: bool = False) -> dict[str, list[str]]:
@@ -237,7 +277,7 @@ class ExcelStore:
         wb = self._load()
         self._backup()
         ws = wb["投递记录"]
-        table = ws.tables["tblApplications"]
+        table, _ = self._ensure_table(ws, "tblApplications", APPLICATION_COLUMNS)
         created_ids: list[str] = []
         for draft in drafts:
             row = self._first_append_row(ws)
@@ -343,6 +383,7 @@ class ExcelStore:
             raise KeyError(f"找不到投递记录：{application_id}")
         self._backup()
         ws = wb["跟进记录"]
+        table, _ = self._ensure_table(ws, "tblFollowUps", FOLLOW_UP_COLUMNS)
         row = self._first_append_row(ws)
         self._copy_row_style(ws, 2, row, len(FOLLOW_UP_COLUMNS))
         record_id = self._next_id(ws, "LOG")
@@ -358,7 +399,7 @@ class ExcelStore:
         }
         for col, header in enumerate(FOLLOW_UP_COLUMNS, 1):
             ws.cell(row, col, values.get(header))
-        ws.tables["tblFollowUps"].ref = f"A1:L{row}"
+        table.ref = f"A1:L{row}"
         if follow_up.next_date:
             application_ws.cell(
                 application_row,
@@ -382,6 +423,7 @@ class ExcelStore:
             raise KeyError(f"找不到投递记录：{application_id}")
         self._backup()
         application_rows = [row for row in range(2, app_ws.max_row + 1) if app_ws.cell(row, 1).value]
+        app_table, _ = self._ensure_table(app_ws, "tblApplications", APPLICATION_COLUMNS)
         if len(application_rows) == 1:
             self._clear_row_values(app_ws, target_row, len(APPLICATION_COLUMNS))
             for header, formula in application_formulas(target_row).items():
@@ -389,8 +431,9 @@ class ExcelStore:
         else:
             app_ws.delete_rows(target_row)
         app_last = max(2, app_ws.max_row)
-        app_ws.tables["tblApplications"].ref = f"A1:W{app_last}"
+        app_table.ref = f"A1:W{app_last}"
         follow_ws = wb["跟进记录"]
+        follow_table, _ = self._ensure_table(follow_ws, "tblFollowUps", FOLLOW_UP_COLUMNS)
         for row in range(follow_ws.max_row, 1, -1):
             if follow_ws.cell(row, 2).value == application_id:
                 follow_rows = [item for item in range(2, follow_ws.max_row + 1) if follow_ws.cell(item, 1).value]
@@ -399,7 +442,7 @@ class ExcelStore:
                 else:
                     follow_ws.delete_rows(row)
         follow_last = max(2, follow_ws.max_row)
-        follow_ws.tables["tblFollowUps"].ref = f"A1:L{follow_last}"
+        follow_table.ref = f"A1:L{follow_last}"
         self._refresh_option_views(wb)
         self._atomic_save(wb)
 

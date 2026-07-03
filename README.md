@@ -8,7 +8,7 @@
   <a href="https://github.com/1622354895/JobTool/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/1622354895/JobTool?display_name=tag&sort=semver"></a>
   <a href="https://github.com/1622354895/JobTool/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/1622354895/JobTool/total"></a>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-41%20passed-2ea44f">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-42%20passed-2ea44f">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/1622354895/JobTool"></a>
 </p>
 
