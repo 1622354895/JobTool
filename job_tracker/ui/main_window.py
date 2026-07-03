@@ -7,6 +7,7 @@ from ..excel_store import ExcelStore
 from ..settings import AppSettings
 from .dashboard_page import DashboardPage
 from .follow_up_page import FollowUpPage
+from .help_dialog import show_help_dialog
 from .message_page import MessagePage
 from .records_page import RecordsPage
 from .settings_page import SettingsPage
@@ -50,6 +51,7 @@ class MainWindow(ttk.Frame):
             button = ttk.Button(sidebar, text=label, command=lambda name=key: self.show_page(name), bootstyle="secondary", width=20)
             button.pack(fill=X, pady=5)
             self.nav_buttons[key] = button
+        ttk.Button(sidebar, text="使用帮助", command=lambda: show_help_dialog(self), bootstyle="info-outline", width=20).pack(fill=X, pady=(16, 5))
         self.file_var = ttk.StringVar(value=self.store.path.name)
         ttk.Label(sidebar, text="当前数据文件", foreground="#7FA0B8", background=COLORS["navy"], font=(FONT, 8)).pack(side="bottom", anchor="w", pady=(0, 4))
         ttk.Label(sidebar, textvariable=self.file_var, wraplength=175, foreground="#DCE8F0", background=COLORS["navy"], font=(FONT, 8)).pack(side="bottom", anchor="w")

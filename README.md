@@ -8,7 +8,7 @@
   <a href="https://github.com/1622354895/JobTool/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/1622354895/JobTool?display_name=tag&sort=semver"></a>
   <a href="https://github.com/1622354895/JobTool/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/1622354895/JobTool/total"></a>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-37%20passed-2ea44f">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-38%20passed-2ea44f">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/1622354895/JobTool"></a>
 </p>
 
@@ -25,6 +25,10 @@
 JobTool 是一款面向校招、实习和社招求职者的桌面投递管理工具。你可以通过快速表单或批量消息输入公司、岗位、投递时间和进度，程序会在确认后将信息结构化写入 Excel，并提供搜索筛选、跟进提醒、状态更新和数据看板。
 
 **无需数据库、服务器、云端账号或 API Key。** 数据默认只保存在本地 Excel 文件中；Windows 用户可以直接下载打包版本，解压即用。
+
+## 差异化定位
+
+GitHub 上已有不少 Job Application Tracker、Excel Tracker、AI 自动投递和简历 Copilot 项目。JobTool 的定位不是自动投递，而是**本地优先、开箱即用、适合中文求职记录的桌面 Excel 台账**：EXE 负责录入、选项管理、搜索、跟进和看板；Excel 负责本地数据承载、公式和图表展示。它更适合希望把数据留在本机、又不想手动维护复杂表格的用户。
 
 ## 为什么使用 JobTool
 
@@ -46,6 +50,7 @@ JobTool 是一款面向校招、实习和社招求职者的桌面投递管理工
 - **跟进提醒**：记录沟通、笔试、面试、下一步行动和日期，按逾期、今日、未来 7 天或全部安排筛选。
 - **可视化看板**：统计累计投递、待跟进、回复率、面试转化、状态、岗位方向、渠道和优先级分布。
 - **Excel 自动化**：Excel 作为本地数据文件和看板文件，内置筛选、下拉选项、条件格式、指标卡、待办清单和四张图表。
+- **内置帮助**：EXE 侧栏提供“使用帮助”弹窗，覆盖首次使用、录入、选项管理、跟进、看板、备份和分享给别人使用。
 - **备份保护**：每次写入前自动备份，默认保留最近 30 份。
 
 ## 工作流程
@@ -66,6 +71,7 @@ flowchart LR
 1. 前往 [Releases](https://github.com/1622354895/JobTool/releases/latest) 下载 `JobTool-Windows-x64.zip`。
 2. 完整解压 ZIP，不要只复制其中的 EXE。
 3. 双击 `JobTracker.exe`。
+4. 需要操作说明时，点击左侧侧栏的“使用帮助”。
 
 首次启动会在程序目录自动创建：
 
@@ -145,7 +151,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1
 
 ```text
 dist/JobTracker/                 # 完整运行目录，EXE 位于该目录
-dist/JobTool-Windows-x64.zip     # GitHub Releases 发布包
+dist/JobTool-Windows-x64.zip     # 可直接发给别人使用的发布压缩包
 ```
 
 发布包不包含本机配置、个人求职记录或备份文件。
