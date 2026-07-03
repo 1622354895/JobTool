@@ -1,6 +1,6 @@
 from datetime import date
 
-from job_tracker.statistics import calculate_metrics, pending_follow_ups
+from job_tracker.statistics import calculate_metrics, follow_up_rows, pending_follow_ups
 
 
 def test_metrics_use_real_denominators():
@@ -36,3 +36,17 @@ def test_pending_follow_ups_prioritize_overdue_and_exclude_finished():
 
     assert [row["投递编号"] for row in result] == ["1", "2", "3"]
     assert [row["待办状态"] for row in result] == ["已逾期", "今日跟进", "未来安排"]
+
+
+def test_follow_up_rows_support_center_filters():
+    rows = [
+        {"投递编号": "1", "公司名称": "逾期公司", "岗位名称": "Java", "当前状态": "一面", "下次跟进日期": date(2026, 6, 17)},
+        {"投递编号": "2", "公司名称": "今日公司", "岗位名称": "算法", "当前状态": "笔试中", "下次跟进日期": date(2026, 6, 18)},
+        {"投递编号": "3", "公司名称": "七天内", "岗位名称": "Agent", "当前状态": "已投递", "下次跟进日期": date(2026, 6, 22)},
+        {"投递编号": "4", "公司名称": "已安排", "岗位名称": "产品", "当前状态": "已投递", "下次跟进日期": date(2026, 7, 2)},
+        {"投递编号": "5", "公司名称": "结束公司", "岗位名称": "测试", "当前状态": "Offer", "下次跟进日期": date(2026, 6, 16)},
+    ]
+
+    assert [row["投递编号"] for row in follow_up_rows(rows, today=date(2026, 6, 18), scope="待处理")] == ["1", "2", "3"]
+    assert [row["投递编号"] for row in follow_up_rows(rows, today=date(2026, 6, 18), scope="全部安排")] == ["1", "2", "3", "4"]
+    assert [row["投递编号"] for row in follow_up_rows(rows, today=date(2026, 6, 18), scope="已安排")] == ["4"]

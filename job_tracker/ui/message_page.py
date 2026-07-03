@@ -6,7 +6,7 @@ from ttkbootstrap.constants import BOTH, END, LEFT, X
 
 from ..models import ApplicationDraft, Operation, ParseResult
 from ..parser import parse_date, parse_message
-from ..schema import CHANNELS, DIRECTIONS, JOB_TYPES, PRIORITIES, STATUSES
+from ..schema import CHANNELS, DIRECTIONS, JOB_TYPES, OPTION_GROUPS, PRIORITIES, STATUSES
 from .theme import FONT, page_header
 
 
@@ -40,6 +40,7 @@ class MessagePage(ttk.Frame):
         super().__init__(master, padding=24)
         self.app = app
         self.current_result = None
+        self.option_widgets = {group: [] for group in OPTION_GROUPS}
         self.edit_vars = {name: ttk.StringVar() for name in self.PREVIEW_COLUMNS}
         self.quick_vars = {
             "公司": ttk.StringVar(), "岗位": ttk.StringVar(), "日期": ttk.StringVar(value=date.today().isoformat()),
@@ -48,6 +49,21 @@ class MessagePage(ttk.Frame):
             "链接": ttk.StringVar(), "备注": ttk.StringVar(),
         }
         self._build()
+
+    def _options(self, include_record_values: bool = False) -> dict[str, list[str]]:
+        try:
+            return self.app.store.option_groups(include_record_values=include_record_values)
+        except Exception:
+            return {group: list(values) for group, values in OPTION_GROUPS.items()}
+
+    def _option_values(self, group: str, include_record_values: bool = False) -> list[str]:
+        return self._options(include_record_values=include_record_values).get(group, list(OPTION_GROUPS[group]))
+
+    def refresh(self):
+        groups = self._options(include_record_values=True)
+        for group, widgets in self.option_widgets.items():
+            for widget in widgets:
+                widget.configure(values=groups.get(group, list(OPTION_GROUPS[group])))
 
     def _build(self):
         page_header(self, "录入岗位", "单条记录用快速表单，批量记录或自然语言用智能消息。确认后才会写入 Excel。")
@@ -98,18 +114,20 @@ class MessagePage(ttk.Frame):
 
     def _build_quick_form(self, parent):
         fields = [
-            ("公司", None), ("岗位", None), ("日期", None), ("状态", STATUSES),
-            ("类型", JOB_TYPES), ("方向", DIRECTIONS), ("地点", None), ("渠道", CHANNELS),
-            ("优先级", PRIORITIES), ("链接", None), ("备注", None),
+            ("公司", None, None), ("岗位", None, None), ("日期", None, None), ("状态", "状态", STATUSES),
+            ("类型", "岗位类型", JOB_TYPES), ("方向", "岗位方向", DIRECTIONS), ("地点", None, None), ("渠道", "投递渠道", CHANNELS),
+            ("优先级", "优先级", PRIORITIES), ("链接", None, None), ("备注", None, None),
         ]
-        for index, (label, values) in enumerate(fields):
+        for index, (label, group, defaults) in enumerate(fields):
             field = ttk.Frame(parent)
             field.grid(row=index // 4, column=index % 4, sticky="ew", padx=(0, 12), pady=(0, 10))
             required = " *" if label in {"公司", "岗位"} else ""
             ttk.Label(field, text=label + required, font=(FONT, 9), bootstyle="secondary").pack(anchor="w", pady=(0, 3))
-            if values:
+            if group:
+                values = self._option_values(group, include_record_values=True)
                 state = "readonly" if label in {"状态", "类型", "优先级"} else "normal"
                 widget = ttk.Combobox(field, textvariable=self.quick_vars[label], values=values, state=state, width=16)
+                self.option_widgets[group].append(widget)
             else:
                 widget = ttk.Entry(field, textvariable=self.quick_vars[label], width=16)
             widget.pack(fill=X)
@@ -182,7 +200,7 @@ class MessagePage(ttk.Frame):
         if not text:
             messagebox.showinfo("请输入信息", "请先输入求职信息。")
             return
-        self._set_result(parse_message(text))
+        self._set_result(parse_message(text, options=self._options(include_record_values=True)))
 
     def _set_result(self, result: ParseResult):
         self.current_result = result
@@ -240,13 +258,13 @@ class MessagePage(ttk.Frame):
             field.grid(row=index // 2 + 1, column=index % 2, sticky="ew", padx=(0, 12), pady=(0, 10))
             ttk.Label(field, text=name, font=(FONT, 9), bootstyle="secondary").pack(anchor="w", pady=(0, 3))
             if name == "状态":
-                widget = ttk.Combobox(field, textvariable=self.edit_vars[name], values=STATUSES, state="readonly")
+                widget = ttk.Combobox(field, textvariable=self.edit_vars[name], values=self._option_values("状态", include_record_values=True), state="readonly")
             elif name == "方向":
-                widget = ttk.Combobox(field, textvariable=self.edit_vars[name], values=DIRECTIONS)
+                widget = ttk.Combobox(field, textvariable=self.edit_vars[name], values=self._option_values("岗位方向", include_record_values=True))
             elif name == "渠道":
-                widget = ttk.Combobox(field, textvariable=self.edit_vars[name], values=CHANNELS)
+                widget = ttk.Combobox(field, textvariable=self.edit_vars[name], values=self._option_values("投递渠道", include_record_values=True))
             elif name == "优先级":
-                widget = ttk.Combobox(field, textvariable=self.edit_vars[name], values=PRIORITIES, state="readonly")
+                widget = ttk.Combobox(field, textvariable=self.edit_vars[name], values=self._option_values("优先级", include_record_values=True), state="readonly")
             else:
                 widget = ttk.Entry(field, textvariable=self.edit_vars[name])
             widget.pack(fill=X)

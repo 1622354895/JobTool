@@ -4,6 +4,7 @@ from pathlib import Path
 import ttkbootstrap as ttk
 
 from job_tracker.excel_builder import save_template
+from job_tracker.excel_store import ExcelStore
 from job_tracker.settings import AppSettings
 from job_tracker.ui.main_window import MainWindow
 
@@ -30,6 +31,7 @@ def ensure_excel(settings: AppSettings) -> Path:
     path = configured if configured and configured.exists() else default_excel_path()
     if not path.exists():
         save_template(path)
+    ExcelStore(path).ensure_options_ready()
     settings.save_excel_path(path)
     return path
 

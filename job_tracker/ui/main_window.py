@@ -19,6 +19,7 @@ class MainWindow(ttk.Frame):
         self.root = root
         self.settings = settings
         self.store = ExcelStore(excel_path)
+        self.store.ensure_options_ready()
         self.pages = {}
         self.nav_buttons = {}
         self.pack(fill=BOTH, expand=True)
@@ -78,12 +79,13 @@ class MainWindow(ttk.Frame):
         self.show_page("records")
 
     def refresh_all(self):
-        for key in ("records", "follow", "dashboard"):
+        for key in ("message", "records", "follow", "dashboard", "settings"):
             self.pages[key].refresh()
 
     def set_workbook(self, path: Path):
         store = ExcelStore(path)
         store.search({})
+        store.ensure_options_ready()
         self.store = store
         self.settings.save_excel_path(path)
         self.file_var.set(path.name)

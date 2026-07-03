@@ -24,11 +24,14 @@ class DashboardPage(ttk.Frame):
         page_header(self, "数据看板", "指标从当前 Excel 实时计算，帮助你观察投递节奏和转化情况。")
         metrics_frame = ttk.Frame(self)
         metrics_frame.pack(fill="x")
-        labels = [("total", "累计投递"), ("week_count", "本周投递"), ("month_count", "本月投递"), ("interview_count", "面试阶段"), ("offer_count", "Offer"), ("interview_rate", "面试转化")]
+        labels = [
+            ("total", "累计投递"), ("week_count", "本周投递"), ("month_count", "本月投递"), ("pending_count", "待跟进"),
+            ("interview_count", "面试阶段"), ("offer_count", "Offer"), ("reply_rate", "回复率"), ("interview_rate", "面试转化"),
+        ]
         for index, (key, label) in enumerate(labels):
             panel = ttk.Labelframe(metrics_frame, padding=12, bootstyle="secondary")
-            panel.grid(row=0, column=index, sticky="ew", padx=(0, 8))
-            metrics_frame.columnconfigure(index, weight=1)
+            panel.grid(row=index // 4, column=index % 4, sticky="ew", padx=(0, 8), pady=(0, 8))
+            metrics_frame.columnconfigure(index % 4, weight=1)
             ttk.Label(panel, text=label, bootstyle="secondary", font=(FONT, 9)).pack(anchor="w")
             var = ttk.StringVar(value="0")
             self.metric_vars[key] = var
@@ -64,10 +67,11 @@ class DashboardPage(ttk.Frame):
     def refresh(self):
         rows = self.app.store.search({})
         metrics = calculate_metrics(rows)
+        pending = pending_follow_ups(rows, limit=20)
+        metrics["pending_count"] = len(pending)
         for key, var in self.metric_vars.items():
             value = metrics[key]
             var.set(f"{value:.1%}" if key.endswith("rate") else str(value))
-        pending = pending_follow_ups(rows, limit=20)
         self.pending_tree.delete(*self.pending_tree.get_children())
         self.pending_rows = {row["投递编号"]: row for row in pending}
         for row in pending:

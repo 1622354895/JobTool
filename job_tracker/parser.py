@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 
 from .classifier import RULES, classify_direction
 from .models import ApplicationDraft, FollowUpDraft, Operation, ParseResult
-from .schema import CHANNELS, CITIES, JOB_TYPES, PRIORITIES, STATUSES
+from .schema import CHANNELS, CITIES, DIRECTIONS, JOB_TYPES, PRIORITIES, STATUSES
 
 
 FIELD_ALIASES = {
@@ -56,6 +56,12 @@ def _scan_choice(text: str, choices: list[str]) -> str:
     return ""
 
 
+def _choices(options: dict[str, list[str]] | None, group: str, defaults: list[str]) -> list[str]:
+    if not options:
+        return defaults
+    return options.get(group) or defaults
+
+
 def _split_target(text: str) -> tuple[str, str]:
     cleaned = re.sub(r"^(把|记录)", "", text).strip(" ：:,，")
     if " " in cleaned:
@@ -100,7 +106,7 @@ def _parse_key_value_line(line: str, today: date) -> tuple[ApplicationDraft, lis
     return draft, warnings
 
 
-def _parse_natural_add(text: str, today: date) -> tuple[ApplicationDraft, list[str]]:
+def _parse_natural_add(text: str, today: date, options: dict[str, list[str]] | None = None) -> tuple[ApplicationDraft, list[str]]:
     warnings: list[str] = []
     relative = "今天" if "今天" in text else "昨天" if "昨天" in text else "明天" if "明天" in text else ""
     applied_date = parse_date(relative, today) if relative else today
@@ -118,29 +124,36 @@ def _parse_natural_add(text: str, today: date) -> tuple[ApplicationDraft, list[s
         company=company,
         position=position,
         applied_date=applied_date,
-        status=_scan_choice(text, STATUSES) or "已投递",
-        job_type=_scan_choice(text, JOB_TYPES),
+        status=_scan_choice(text, _choices(options, "状态", STATUSES)) or "已投递",
+        job_type=_scan_choice(text, _choices(options, "岗位类型", JOB_TYPES)),
         direction=classify_direction(position, text),
         location=location,
-        channel=_scan_choice(text, CHANNELS),
+        channel=_scan_choice(text, _choices(options, "投递渠道", CHANNELS)),
         priority="高" if re.search(r"优先级\s*高", text) else "低" if re.search(r"优先级\s*低", text) else "中",
         url=(re.search(r"https?://\S+", text).group(0).rstrip("，,。") if re.search(r"https?://\S+", text) else ""),
     )
+    direction = _scan_choice(text, _choices(options, "岗位方向", DIRECTIONS))
+    if direction:
+        draft.direction = direction
     return draft, warnings
 
 
-def _parse_query(text: str) -> ParseResult:
+def _parse_query(text: str, options: dict[str, list[str]] | None = None) -> ParseResult:
     query: dict[str, object] = {}
-    for direction, _ in RULES:
-        if direction in text or classify_direction(text) == direction:
-            query["direction"] = direction
-            break
+    direction = _scan_choice(text, _choices(options, "岗位方向", DIRECTIONS))
+    if direction:
+        query["direction"] = direction
+    else:
+        for direction, _ in RULES:
+            if direction in text or classify_direction(text) == direction:
+                query["direction"] = direction
+                break
     if "正在面试" in text or "面试中" in text:
         query["statuses"] = ["一面", "二面", "终面"]
     elif "需要跟进" in text or "待跟进" in text:
         query["follow_up_statuses"] = ["已逾期", "今日跟进"]
     else:
-        status = _scan_choice(text, STATUSES)
+        status = _scan_choice(text, _choices(options, "状态", STATUSES))
         if status:
             query["status"] = status
     if "本周" in text:
@@ -148,13 +161,13 @@ def _parse_query(text: str) -> ParseResult:
     return ParseResult(operation=Operation.QUERY, query=query)
 
 
-def _parse_update(text: str, today: date) -> ParseResult:
+def _parse_update(text: str, today: date, options: dict[str, list[str]] | None = None) -> ParseResult:
     match = re.search(r"把(.+?)(?:更新为|改为|进度为|状态为)([^，,。]+)", text)
     warnings: list[str] = []
     if not match:
         return ParseResult(operation=Operation.UPDATE, warnings=["无法识别需要更新的岗位"])
     company, position = _split_target(match.group(1))
-    status = _scan_choice(match.group(2), STATUSES) or match.group(2).strip()
+    status = _scan_choice(match.group(2), _choices(options, "状态", STATUSES)) or match.group(2).strip()
     if not company or not position:
         warnings.append("无法可靠识别目标公司和岗位")
     changes: dict[str, object] = {"status": status}
@@ -195,14 +208,14 @@ def _parse_follow_up(text: str, today: date) -> ParseResult:
     )
 
 
-def parse_message(text: str, today: date | None = None) -> ParseResult:
+def parse_message(text: str, today: date | None = None, options: dict[str, list[str]] | None = None) -> ParseResult:
     today = today or date.today()
     cleaned = text.strip()
     operation = detect_operation(cleaned)
     if operation is Operation.QUERY:
-        return _parse_query(cleaned)
+        return _parse_query(cleaned, options)
     if operation is Operation.UPDATE:
-        return _parse_update(cleaned, today)
+        return _parse_update(cleaned, today, options)
     if operation is Operation.FOLLOW_UP:
         return _parse_follow_up(cleaned, today)
     drafts: list[ApplicationDraft] = []
@@ -213,7 +226,7 @@ def parse_message(text: str, today: date | None = None) -> ParseResult:
         draft, line_warnings = (
             _parse_key_value_line(line, today)
             if re.search(r"(?:公司|岗位|职位)\s*[:：]", line)
-            else _parse_natural_add(line, today)
+            else _parse_natural_add(line, today, options)
         )
         drafts.append(draft)
         warnings.extend(f"第{line_no}行：{warning}" for warning in line_warnings)

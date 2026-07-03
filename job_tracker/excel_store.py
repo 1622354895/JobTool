@@ -7,9 +7,19 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from .excel_builder import application_formulas
+from .excel_builder import application_formulas, refresh_workbook_options
 from .models import ApplicationDraft, FollowUpDraft
-from .schema import APPLICATION_COLUMNS, FOLLOW_UP_COLUMNS
+from .options import (
+    OPTION_CONFIG_VERSION,
+    OPTION_GROUP_ORDER,
+    OPTION_META_HEADER,
+    OPTION_TARGETS,
+    clean_option_values,
+    merge_option_values,
+    merge_with_default_options,
+    normalize_option_groups,
+)
+from .schema import APPLICATION_COLUMNS, FOLLOW_UP_COLUMNS, OPTION_GROUPS
 
 
 class WorkbookLockedError(RuntimeError):
@@ -55,6 +65,116 @@ class ExcelStore:
             wb.close()
             raise WorkbookFormatError("投递记录表头已被修改")
         return wb
+
+    @staticmethod
+    def _header_columns(ws) -> dict[str, int]:
+        return {str(cell.value): cell.column for cell in ws[1] if cell.value}
+
+    @staticmethod
+    def _option_meta_version(ws) -> str:
+        headers = ExcelStore._header_columns(ws)
+        column = headers.get(OPTION_META_HEADER)
+        return str(ws.cell(2, column).value or "") if column else ""
+
+    @staticmethod
+    def _read_option_groups(wb) -> dict[str, list[str]]:
+        ws = wb["选项配置"]
+        headers = ExcelStore._header_columns(ws)
+        groups: dict[str, list[str]] = {}
+        for group in OPTION_GROUP_ORDER:
+            column = headers.get(group)
+            values = []
+            if column:
+                values = [ws.cell(row, column).value for row in range(2, ws.max_row + 1)]
+            groups[group] = clean_option_values(values) or list(OPTION_GROUPS[group])
+        return normalize_option_groups(groups)
+
+    @staticmethod
+    def _merge_record_option_values(wb, groups: dict[str, list[str]]) -> dict[str, list[str]]:
+        merged = {group: list(values) for group, values in groups.items()}
+        for group, (sheet_name, header) in OPTION_TARGETS.items():
+            ws = wb[sheet_name]
+            headers = ExcelStore._header_columns(ws)
+            column = headers.get(header)
+            if not column:
+                continue
+            record_values = [
+                ws.cell(row, column).value
+                for row in range(2, ws.max_row + 1)
+                if ws.cell(row, 1).value
+            ]
+            merged[group] = merge_option_values(merged[group], record_values)
+        return normalize_option_groups(merged)
+
+    def _refresh_option_views(self, wb) -> None:
+        groups = self._read_option_groups(wb)
+        dashboard_groups = self._merge_record_option_values(wb, groups)
+        refresh_workbook_options(wb, groups, dashboard_groups)
+
+    def ensure_options_ready(self) -> None:
+        wb = self._load()
+        version = self._option_meta_version(wb["选项配置"])
+        groups = self._read_option_groups(wb)
+        if version == OPTION_CONFIG_VERSION:
+            wb.close()
+            return
+        self._backup()
+        groups = merge_with_default_options(groups)
+        dashboard_groups = self._merge_record_option_values(wb, groups)
+        refresh_workbook_options(wb, groups, dashboard_groups)
+        self._atomic_save(wb)
+
+    def option_groups(self, include_record_values: bool = False) -> dict[str, list[str]]:
+        wb = self._load()
+        groups = self._read_option_groups(wb)
+        if include_record_values:
+            groups = self._merge_record_option_values(wb, groups)
+        wb.close()
+        return groups
+
+    def save_option_groups(self, option_groups: dict[str, list[str]]) -> None:
+        wb = self._load()
+        self._backup()
+        groups = normalize_option_groups(option_groups)
+        dashboard_groups = self._merge_record_option_values(wb, groups)
+        refresh_workbook_options(wb, groups, dashboard_groups)
+        self._atomic_save(wb)
+
+    def rename_option_value(self, group: str, old_value: str, new_value: str) -> None:
+        old_value = old_value.strip()
+        new_value = new_value.strip()
+        if group not in OPTION_TARGETS:
+            raise KeyError(f"不支持的选项组：{group}")
+        if not old_value or not new_value:
+            raise ValueError("选项名称不能为空")
+        wb = self._load()
+        self._backup()
+        groups = self._read_option_groups(wb)
+        updated_values = []
+        replaced = False
+        for value in groups[group]:
+            if value == old_value:
+                updated_values.append(new_value)
+                replaced = True
+            else:
+                updated_values.append(value)
+        if not replaced:
+            updated_values.append(new_value)
+        groups[group] = clean_option_values(updated_values)
+
+        sheet_name, header = OPTION_TARGETS[group]
+        ws = wb[sheet_name]
+        headers = self._header_columns(ws)
+        column = headers.get(header)
+        if column:
+            for row in range(2, ws.max_row + 1):
+                if ws.cell(row, column).value == old_value:
+                    ws.cell(row, column, new_value)
+                    if sheet_name == "投递记录" and "最后更新时间" in headers:
+                        ws.cell(row, headers["最后更新时间"], datetime.now())
+        dashboard_groups = self._merge_record_option_values(wb, groups)
+        refresh_workbook_options(wb, groups, dashboard_groups)
+        self._atomic_save(wb)
 
     def _backup(self) -> None:
         self.backup_dir.mkdir(parents=True, exist_ok=True)
@@ -138,6 +258,7 @@ class ExcelStore:
                 link_cell.hyperlink = draft.url
                 link_cell.style = "Hyperlink"
             table.ref = f"A1:W{row}"
+        self._refresh_option_views(wb)
         self._atomic_save(wb)
         return created_ids
 
@@ -207,6 +328,7 @@ class ExcelStore:
                 continue
             ws.cell(target_row, APPLICATION_COLUMNS.index(header) + 1, value)
         ws.cell(target_row, APPLICATION_COLUMNS.index("最后更新时间") + 1, datetime.now())
+        self._refresh_option_views(wb)
         self._atomic_save(wb)
 
     def append_follow_up(self, application_id: str, follow_up: FollowUpDraft) -> str:
@@ -278,6 +400,7 @@ class ExcelStore:
                     follow_ws.delete_rows(row)
         follow_last = max(2, follow_ws.max_row)
         follow_ws.tables["tblFollowUps"].ref = f"A1:L{follow_last}"
+        self._refresh_option_views(wb)
         self._atomic_save(wb)
 
     def follow_ups(self, application_id: str | None = None) -> list[dict[str, object]]:

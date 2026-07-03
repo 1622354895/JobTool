@@ -4,7 +4,7 @@ from tkinter import messagebox
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import BOTH, END, LEFT, X
 
-from ..schema import DIRECTIONS, STATUSES
+from ..schema import OPTION_GROUPS
 from .theme import FONT, page_header
 
 
@@ -18,7 +18,33 @@ class RecordsPage(ttk.Frame):
         self.keyword = ttk.StringVar()
         self.status = ttk.StringVar()
         self.direction = ttk.StringVar()
+        self.status_filter = None
+        self.direction_filter = None
+        self.new_status_filter = None
         self._build()
+
+    def _options(self):
+        try:
+            return self.app.store.option_groups(include_record_values=True)
+        except Exception:
+            return {group: list(values) for group, values in OPTION_GROUPS.items()}
+
+    def _refresh_option_values(self):
+        options = self._options()
+        statuses = ["全部状态", *options["状态"]]
+        directions = ["全部方向", *options["岗位方向"]]
+        if self.status.get() not in statuses:
+            self.status.set("全部状态")
+        if self.direction.get() not in directions:
+            self.direction.set("全部方向")
+        if self.new_status.get() not in options["状态"]:
+            self.new_status.set(options["状态"][0])
+        if self.status_filter:
+            self.status_filter.configure(values=statuses)
+        if self.direction_filter:
+            self.direction_filter.configure(values=directions)
+        if self.new_status_filter:
+            self.new_status_filter.configure(values=options["状态"])
 
     def _build(self):
         page_header(self, "投递记录", "按公司、岗位、状态或方向快速定位记录；双击任意行查看完整详情。")
@@ -28,8 +54,11 @@ class RecordsPage(ttk.Frame):
         keyword_entry = ttk.Entry(toolbar, textvariable=self.keyword, width=28)
         keyword_entry.pack(side=LEFT)
         keyword_entry.bind("<Return>", lambda _event: self.refresh())
-        ttk.Combobox(toolbar, textvariable=self.status, values=["全部状态", *STATUSES], width=13, state="readonly").pack(side=LEFT, padx=8)
-        ttk.Combobox(toolbar, textvariable=self.direction, values=["全部方向", *DIRECTIONS], width=14, state="readonly").pack(side=LEFT)
+        options = self._options()
+        self.status_filter = ttk.Combobox(toolbar, textvariable=self.status, values=["全部状态", *options["状态"]], width=13, state="readonly")
+        self.status_filter.pack(side=LEFT, padx=8)
+        self.direction_filter = ttk.Combobox(toolbar, textvariable=self.direction, values=["全部方向", *options["岗位方向"]], width=14, state="readonly")
+        self.direction_filter.pack(side=LEFT)
         self.status.set("全部状态")
         self.direction.set("全部方向")
         ttk.Button(toolbar, text="搜索", command=self.refresh, bootstyle="primary").pack(side=LEFT, padx=8)
@@ -57,8 +86,9 @@ class RecordsPage(ttk.Frame):
         footer = ttk.Frame(self, padding=(0, 12, 0, 0))
         footer.pack(fill=X)
         ttk.Label(footer, text="所选记录状态", bootstyle="secondary").pack(side=LEFT)
-        self.new_status = ttk.StringVar(value="一面")
-        ttk.Combobox(footer, textvariable=self.new_status, values=STATUSES, width=13, state="readonly").pack(side=LEFT)
+        self.new_status = ttk.StringVar(value="一面" if "一面" in options["状态"] else options["状态"][0])
+        self.new_status_filter = ttk.Combobox(footer, textvariable=self.new_status, values=options["状态"], width=13, state="readonly")
+        self.new_status_filter.pack(side=LEFT)
         ttk.Button(footer, text="更新", command=self.update_status, bootstyle="success").pack(side=LEFT, padx=8)
         self.count_var = ttk.StringVar()
         ttk.Label(footer, textvariable=self.count_var, bootstyle="secondary").pack(side="right")
@@ -76,6 +106,7 @@ class RecordsPage(ttk.Frame):
         self.refresh(extra=criteria)
 
     def refresh(self, extra: dict[str, object] | None = None):
+        self._refresh_option_values()
         criteria = dict(extra or {})
         if self.keyword.get().strip():
             criteria["keyword"] = self.keyword.get().strip()

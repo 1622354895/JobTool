@@ -9,6 +9,12 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
+from .options import (
+    OPTION_CONFIG_VERSION,
+    OPTION_GROUP_ORDER,
+    OPTION_META_HEADER,
+    normalize_option_groups,
+)
 from .schema import APPLICATION_COLUMNS, FOLLOW_UP_COLUMNS, OPTION_GROUPS, SHEET_NAMES
 
 
@@ -64,18 +70,41 @@ def _style_table_sheet(ws, headers: list[str], widths: dict[str, int]) -> None:
             ws.cell(2, col).number_format = "yyyy-mm-dd"
 
 
-def _add_validations(ws) -> None:
-    config = "选项配置"
+def _option_column(ws, group: str) -> int | None:
+    for cell in ws[1]:
+        if cell.value == group:
+            return cell.column
+    return None
+
+
+def _option_range(wb, group: str, option_groups: dict[str, list[str]]) -> str:
+    ws = wb["选项配置"]
+    column = _option_column(ws, group)
+    if column is None:
+        raise KeyError(f"缺少选项组：{group}")
+    letter = ws.cell(1, column).column_letter
+    end_row = max(2, len(option_groups[group]) + 1)
+    return f"'选项配置'!${letter}$2:${letter}${end_row}"
+
+
+def _clear_validations(ws) -> None:
+    ws.data_validations.dataValidation = []
+
+
+def apply_option_validations(wb, option_groups: dict[str, list[str]] | None = None) -> None:
+    option_groups = normalize_option_groups(option_groups or OPTION_GROUPS)
+    ws = wb["投递记录"]
+    _clear_validations(ws)
     mappings = {
-        "岗位类型": (2, 5),
-        "岗位方向": (3, 9),
-        "投递渠道": (4, 9),
-        "当前状态": (1, 12),
-        "优先级": (5, 4),
+        "岗位类型": "岗位类型",
+        "岗位方向": "岗位方向",
+        "投递渠道": "投递渠道",
+        "当前状态": "状态",
+        "优先级": "优先级",
     }
     headers = {cell.value: cell.column_letter for cell in ws[1]}
-    for header, (config_col, end_row) in mappings.items():
-        validation = DataValidation(type="list", formula1=f"'{config}'!${ws.cell(1, config_col).column_letter}$2:${ws.cell(1, config_col).column_letter}${end_row}", allow_blank=True)
+    for header, group in mappings.items():
+        validation = DataValidation(type="list", formula1=_option_range(wb, group, option_groups), allow_blank=True)
         validation.error = "请选择下拉列表中的值"
         validation.errorTitle = "无效选项"
         validation.prompt = f"请选择{header}"
@@ -88,6 +117,14 @@ def _add_validations(ws) -> None:
     for header in ("投递日期", "截止日期", "下次跟进日期"):
         letter = headers[header]
         date_validation.add(f"{letter}2:{letter}5000")
+
+    follow_ws = wb["跟进记录"]
+    _clear_validations(follow_ws)
+    log_validation = DataValidation(type="list", formula1=_option_range(wb, "记录类型", option_groups), allow_blank=True)
+    log_validation.error = "请选择下拉列表中的值"
+    log_validation.errorTitle = "无效选项"
+    follow_ws.add_data_validation(log_validation)
+    log_validation.add("E2:E5000")
 
 
 def _add_conditional_formatting(ws) -> None:
@@ -160,10 +197,14 @@ def _build_instructions(ws) -> None:
     ws["C17"].number_format = "yyyy-mm-dd hh:mm"
 
 
-def _build_config(ws) -> None:
+def write_options_sheet(ws, option_groups: dict[str, list[str]] | None = None) -> None:
+    option_groups = normalize_option_groups(option_groups or OPTION_GROUPS)
+    if ws.max_row:
+        ws.delete_rows(1, ws.max_row)
     ws.sheet_view.showGridLines = False
     ws.sheet_view.zoomScale = 95
-    for col, (name, values) in enumerate(OPTION_GROUPS.items(), 1):
+    for col, name in enumerate(OPTION_GROUP_ORDER, 1):
+        values = option_groups[name]
         ws.cell(1, col, name)
         ws.cell(1, col).font = Font(name=FONT_NAME, bold=True, color=WHITE)
         ws.cell(1, col).fill = PatternFill("solid", fgColor=NAVY)
@@ -172,6 +213,14 @@ def _build_config(ws) -> None:
             ws.cell(row, col, value)
             ws.cell(row, col).font = Font(name=FONT_NAME, color=TEXT)
             ws.cell(row, col).fill = PatternFill("solid", fgColor=WHITE if row % 2 == 0 else LIGHT_GRAY)
+    meta_col = len(OPTION_GROUP_ORDER) + 2
+    ws.cell(1, meta_col, OPTION_META_HEADER)
+    ws.cell(2, meta_col, OPTION_CONFIG_VERSION)
+    ws.column_dimensions[ws.cell(1, meta_col).column_letter].hidden = True
+
+
+def _build_config(ws, option_groups: dict[str, list[str]] | None = None) -> None:
+    write_options_sheet(ws, option_groups)
 
 
 def _metric_card(ws, label_cell: str, value_cell: str, label: str, formula: str, number_format: str = "0") -> None:
@@ -186,7 +235,8 @@ def _metric_card(ws, label_cell: str, value_cell: str, label: str, formula: str,
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
 
-def _build_dashboard(ws) -> None:
+def _build_dashboard(ws, option_groups: dict[str, list[str]] | None = None) -> None:
+    option_groups = normalize_option_groups(option_groups or OPTION_GROUPS)
     ws.sheet_view.showGridLines = False
     ws.sheet_view.zoomScale = 85
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -263,9 +313,9 @@ def _build_dashboard(ws) -> None:
         ws.row_dimensions[row].height = 24
     ws.conditional_formatting.add("A9:P18", FormulaRule(formula=['$C9="已逾期"'], fill=PatternFill("solid", fgColor=LIGHT_RED)))
     ws.conditional_formatting.add("A9:P18", FormulaRule(formula=['$C9="今日跟进"'], fill=PatternFill("solid", fgColor=LIGHT_AMBER)))
-    statuses = ["待投递", "已投递", "初筛沟通", "笔试中", "一面", "二面", "终面", "等待结果", "Offer", "已拒绝", "已结束"]
-    directions = ["Agent开发", "大模型应用", "Java后端", "算法工程", "数据分析", "测试开发", "其他"]
-    channels = ["公司官网", "Boss直聘", "牛客", "实习僧", "内推", "校园招聘会", "猎聘", "其他"]
+    statuses = option_groups["状态"]
+    directions = option_groups["岗位方向"]
+    channels = option_groups["投递渠道"]
     ws["R1"], ws["S1"] = "状态", "数量"
     for row, value in enumerate(statuses, 2):
         ws.cell(row, 18, value)
@@ -286,24 +336,27 @@ def _build_dashboard(ws) -> None:
     status_chart = BarChart()
     status_chart.type = "bar"
     status_chart.title = "投递状态分布"
-    status_chart.add_data(Reference(ws, min_col=19, min_row=1, max_row=12), titles_from_data=True)
-    status_chart.set_categories(Reference(ws, min_col=18, min_row=2, max_row=12))
+    status_max_row = max(2, len(statuses) + 1)
+    status_chart.add_data(Reference(ws, min_col=19, min_row=1, max_row=status_max_row), titles_from_data=True)
+    status_chart.set_categories(Reference(ws, min_col=18, min_row=2, max_row=status_max_row))
     status_chart.height, status_chart.width = 7, 10
     status_chart.series[0].graphicalProperties.solidFill = BLUE
     charts.append((status_chart, "A20"))
     direction_chart = BarChart()
     direction_chart.type = "bar"
     direction_chart.title = "岗位方向分布"
-    direction_chart.add_data(Reference(ws, min_col=22, min_row=1, max_row=8), titles_from_data=True)
-    direction_chart.set_categories(Reference(ws, min_col=21, min_row=2, max_row=8))
+    direction_max_row = max(2, len(directions) + 1)
+    direction_chart.add_data(Reference(ws, min_col=22, min_row=1, max_row=direction_max_row), titles_from_data=True)
+    direction_chart.set_categories(Reference(ws, min_col=21, min_row=2, max_row=direction_max_row))
     direction_chart.height, direction_chart.width = 7, 10
     direction_chart.series[0].graphicalProperties.solidFill = GREEN
     charts.append((direction_chart, "I20"))
     channel_chart = BarChart()
     channel_chart.type = "bar"
     channel_chart.title = "投递渠道分布"
-    channel_chart.add_data(Reference(ws, min_col=25, min_row=1, max_row=9), titles_from_data=True)
-    channel_chart.set_categories(Reference(ws, min_col=24, min_row=2, max_row=9))
+    channel_max_row = max(2, len(channels) + 1)
+    channel_chart.add_data(Reference(ws, min_col=25, min_row=1, max_row=channel_max_row), titles_from_data=True)
+    channel_chart.set_categories(Reference(ws, min_col=24, min_row=2, max_row=channel_max_row))
     channel_chart.height, channel_chart.width = 7, 10
     channel_chart.series[0].graphicalProperties.solidFill = AMBER
     charts.append((channel_chart, "A35"))
@@ -323,13 +376,34 @@ def _build_dashboard(ws) -> None:
         ws.column_dimensions[col].hidden = True
 
 
-def build_workbook() -> Workbook:
+def rebuild_dashboard_sheet(wb, option_groups: dict[str, list[str]] | None = None) -> None:
+    index = wb.sheetnames.index("数据看板")
+    old = wb["数据看板"]
+    wb.remove(old)
+    ws = wb.create_sheet("数据看板", index)
+    _build_dashboard(ws, option_groups)
+
+
+def refresh_workbook_options(
+    wb,
+    option_groups: dict[str, list[str]] | None = None,
+    dashboard_groups: dict[str, list[str]] | None = None,
+) -> dict[str, list[str]]:
+    normalized = normalize_option_groups(option_groups or OPTION_GROUPS)
+    write_options_sheet(wb["选项配置"], normalized)
+    apply_option_validations(wb, normalized)
+    rebuild_dashboard_sheet(wb, dashboard_groups or normalized)
+    return normalized
+
+
+def build_workbook(option_groups: dict[str, list[str]] | None = None) -> Workbook:
+    option_groups = normalize_option_groups(option_groups or OPTION_GROUPS)
     wb = Workbook()
     wb.remove(wb.active)
     for name in SHEET_NAMES:
         wb.create_sheet(name)
     _build_instructions(wb["使用说明"])
-    _build_config(wb["选项配置"])
+    _build_config(wb["选项配置"], option_groups)
     application_ws = wb["投递记录"]
     application_ws.append(APPLICATION_COLUMNS)
     application_ws.append([None] * len(APPLICATION_COLUMNS))
@@ -347,7 +421,6 @@ def build_workbook() -> Workbook:
         "重复检查": 13, "创建时间": 18, "最后更新时间": 18,
     }
     _style_table_sheet(application_ws, APPLICATION_COLUMNS, widths)
-    _add_validations(application_ws)
     _add_conditional_formatting(application_ws)
     follow_ws = wb["跟进记录"]
     follow_ws.append(FOLLOW_UP_COLUMNS)
@@ -356,10 +429,8 @@ def build_workbook() -> Workbook:
     follow_table.tableStyleInfo = _table_style()
     follow_ws.add_table(follow_table)
     _style_table_sheet(follow_ws, FOLLOW_UP_COLUMNS, {"过程内容": 34, "面试问题": 30, "自我复盘": 30, "对方反馈": 25, "下一步行动": 25})
-    log_validation = DataValidation(type="list", formula1="'选项配置'!$F$2:$F$10", allow_blank=True)
-    follow_ws.add_data_validation(log_validation)
-    log_validation.add("E2:E5000")
-    _build_dashboard(wb["数据看板"])
+    apply_option_validations(wb, option_groups)
+    _build_dashboard(wb["数据看板"], option_groups)
     wb["使用说明"].sheet_view.tabSelected = True
     wb.active = 0
     try:

@@ -14,18 +14,42 @@ def _as_date(value):
 
 def pending_follow_ups(rows: list[dict[str, object]], today: date | None = None, limit: int = 8) -> list[dict[str, object]]:
     today = today or date.today()
+    pending = follow_up_rows(rows, today=today, scope="待处理")
+    return pending[:max(limit, 0)]
+
+
+def follow_up_rows(rows: list[dict[str, object]], today: date | None = None, scope: str = "待处理") -> list[dict[str, object]]:
+    today = today or date.today()
     finished_states = {"Offer", "已拒绝", "已结束"}
-    pending = []
+    allowed = {
+        "待处理": {"已逾期", "今日跟进", "未来7天"},
+        "全部安排": {"已逾期", "今日跟进", "未来7天", "已安排"},
+        "已逾期": {"已逾期"},
+        "今日跟进": {"今日跟进"},
+        "未来7天": {"未来7天"},
+        "已安排": {"已安排"},
+    }.get(scope, {"已逾期", "今日跟进", "未来7天"})
+    result = []
     for row in rows:
         follow_date = _as_date(row.get("下次跟进日期"))
         if not isinstance(follow_date, date) or row.get("当前状态") in finished_states:
             continue
         item = dict(row)
         item["下次跟进日期"] = follow_date
-        item["待办状态"] = "已逾期" if follow_date < today else "今日跟进" if follow_date == today else "未来安排"
-        pending.append(item)
-    pending.sort(key=lambda item: (item["下次跟进日期"], str(item.get("公司名称", "")), str(item.get("岗位名称", ""))))
-    return pending[:max(limit, 0)]
+        item["跟进状态"] = (
+            "已逾期"
+            if follow_date < today
+            else "今日跟进"
+            if follow_date == today
+            else "未来7天"
+            if follow_date <= today + timedelta(days=7)
+            else "已安排"
+        )
+        item["待办状态"] = "未来安排" if item["跟进状态"] in {"未来7天", "已安排"} else item["跟进状态"]
+        if item["跟进状态"] in allowed:
+            result.append(item)
+    result.sort(key=lambda item: (item["下次跟进日期"], str(item.get("公司名称", "")), str(item.get("岗位名称", ""))))
+    return result
 
 
 def calculate_metrics(rows: list[dict[str, object]], today: date | None = None) -> dict[str, object]:
